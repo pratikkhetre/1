@@ -1,0 +1,112 @@
+%%cuda
+#include <iostream>
+#include <cstdlib>
+#include <ctime>
+#include <chrono>
+
+// Kernel function to add two vectors
+__global__ void addVectors(int *a, int *b, int *c, int size)
+{
+    int index = blockIdx.x * blockDim.x + threadIdx.x;
+    if (index < size)
+    {
+        c[index] = a[index] + b[index];
+    }
+}
+
+// Sequential function to add two vectors
+void addVectorsSequential(int *a, int *b, int *c, int size)
+{
+    for (int i = 0; i < size; ++i)
+    {
+        c[i] = a[i] + b[i];
+    }
+}
+
+int main()
+{
+    const int size = 1000000; // Adjust the size of the vectors as needed
+    const int blockSize = 256;
+    const int gridSize = (size + blockSize - 1) / blockSize;
+
+    // Allocate memory for host vectors
+    int *a = new int[size];
+    int *b = new int[size];
+    int *c = new int[size]; // Result vector for parallel version
+    int *d = new int[size]; // Result vector for sequential version
+
+    // Initialize host vectors
+    for (int i = 0; i < size; ++i)
+    {
+        a[i] = rand() % 1000;
+        b[i] = rand() % 1000;
+    }
+
+    // Allocate memory for device vectors
+    int *dev_a, *dev_b, *dev_c;
+    cudaMalloc((void **)&dev_a, size * sizeof(int));
+    cudaMalloc((void **)&dev_b, size * sizeof(int));
+    cudaMalloc((void **)&dev_c, size * sizeof(int));
+
+    // Copy host vectors to device
+    cudaMemcpy(dev_a, a, size * sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(dev_b, b, size * sizeof(int), cudaMemcpyHostToDevice);
+
+    // Start measuring parallel execution time
+    auto start_parallel = std::chrono::high_resolution_clock::now();
+
+    // Launch kernel to add vectors
+    addVectors<<<gridSize, blockSize>>>(dev_a, dev_b, dev_c, size);
+
+    // End measuring parallel execution time
+    auto stop_parallel = std::chrono::high_resolution_clock::now();
+    auto duration_parallel = std::chrono::duration_cast<std::chrono::milliseconds>(stop_parallel - start_parallel);
+    std::cout << "Parallel execution time: " << duration_parallel.count() << " milliseconds\n";
+
+    // Copy result vector from device to host
+    cudaMemcpy(c, dev_c, size * sizeof(int), cudaMemcpyDeviceToHost);
+
+    // Start measuring sequential execution time
+    auto start_sequential = std::chrono::high_resolution_clock::now();
+
+    // Perform addition sequentially
+    addVectorsSequential(a, b, d, size);
+
+    // End measuring sequential execution time
+    auto stop_sequential = std::chrono::high_resolution_clock::now();
+    auto duration_sequential = std::chrono::duration_cast<std::chrono::milliseconds>(stop_sequential - start_sequential);
+    std::cout << "Sequential execution time: " << duration_sequential.count() << " milliseconds\n";
+
+    // Compare results to ensure correctness
+    bool resultCorrect = true;
+    for (int i = 0; i < size; ++i)
+    {
+        if (c[i] != d[i])
+        {
+            resultCorrect = false;
+            break;
+        }
+    }
+
+    if (resultCorrect)
+    {
+        std::cout << "Results are correct\n";
+    }
+    else
+    {
+        std::cout << "Results are incorrect\n";
+    }
+
+    // Free device memory
+    cudaFree(dev_a);
+    cudaFree(dev_b);
+    cudaFree(dev_c);
+
+    // Free host memory
+    delete[] a;
+    delete[] b;
+    delete[] c;
+    delete[] d;
+
+    return 0;
+}
